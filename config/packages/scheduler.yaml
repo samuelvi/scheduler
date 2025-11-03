@@ -1,0 +1,19 @@
+# Scheduler configuration
+parameters:
+    # Number of tasks to fetch and process in each batch
+    scheduler.batch_size: 100
+
+    # Maximum execution time for a single worker run (in seconds)
+    # Recommended: slightly less than cron interval to avoid overlap
+    scheduler.max_execution_time: 50
+
+    # Sleep time between batches in milliseconds
+    # Prevents hammering the database when processing multiple batches
+    scheduler.worker_sleep: 100
+
+    # Timeout for stuck tasks in minutes
+    # Tasks in "processing" status longer than this will be reset to "pending"
+    scheduler.stuck_task_timeout: 5
+
+    # Cleanup old tasks after this many days
+    scheduler.cleanup_days: 30

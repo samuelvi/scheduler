@@ -1,0 +1,57 @@
+
+###> symfony/framework-bundle ###
+/.env.local
+/.env.local.php
+/.env.*.local
+/config/secrets/prod/prod.decrypt.private.php
+/public/bundles/
+/var/
+/vendor/
+###< symfony/framework-bundle ###
+
+###> phpunit/phpunit ###
+/phpunit.xml
+/.phpunit.result.cache
+/.phpunit.cache
+/coverage/
+###< phpunit/phpunit ###
+
+###> symfony/phpunit-bridge ###
+.phpunit.result.cache
+/phpunit.xml
+###< symfony/phpunit-bridge ###
+
+###> doctrine/doctrine-bundle ###
+/migrations/*.php.bak
+###< doctrine/doctrine-bundle ###
+
+###> Temporary reports and documentation ###
+/.temp_reports/
+###< Temporary reports and documentation ###
+
+###> IDE and editors ###
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+###< IDE and editors ###
+
+###> Composer ###
+/composer.lock
+/composer.phar
+###< Composer ###
+
+###> Docker volumes ###
+/docker/postgres/data/
+###< Docker volumes ###
+
+###> Logs ###
+*.log
+/logs/
+###< Logs ###
+
+###> Supervisor ###
+supervisor-scheduler.conf
+###< Supervisor ###

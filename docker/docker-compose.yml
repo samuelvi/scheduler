@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: scheduler_postgres
+    environment:
+      POSTGRES_DB: scheduler
+      POSTGRES_USER: symfony
+      POSTGRES_PASSWORD: symfony
+    ports:
+      - "5433:5432"
+    volumes:
+      - type: volume
+        source: postgres_data
+        target: /var/lib/postgresql/data
+    networks:
+      - scheduler_network
+
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scheduler_php
+    volumes:
+      - type: bind
+        source: ./
+        target: /var/www/html
+    networks:
+      - scheduler_network
+    depends_on:
+      - postgres
+
+  apache:
+    image: httpd:2.4-alpine
+    container_name: scheduler_apache
+    ports:
+      - "8080:80"
+    volumes:
+      - type: bind
+        source: ./
+        target: /var/www/html
+      - type: bind
+        source: ./docker/apache/vhost.conf
+        target: /usr/local/apache2/conf/extra/vhost.conf
+      - type: bind
+        source: ./docker/apache/httpd.conf
+        target: /usr/local/apache2/conf/httpd.conf
+    networks:
+      - scheduler_network
+    depends_on:
+      - php
+
+  supervisor:
+    build:
+      context: .
+      dockerfile: docker/supervisor/Dockerfile
+    container_name: scheduler_supervisor
+    volumes:
+      - type: bind
+        source: ./
+        target: /var/www/html
+      - type: bind
+        source: ./docker/supervisor/supervisor.conf
+        target: /etc/supervisor/conf.d/supervisor.conf
+    networks:
+      - scheduler_network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+networks:
+  scheduler_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
