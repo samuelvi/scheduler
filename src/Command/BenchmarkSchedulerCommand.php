@@ -143,7 +143,7 @@ class BenchmarkSchedulerCommand extends Command
         $repo = $this->entityManager->getRepository(ScheduledTask::class);
         $assignedPerWorker = [];
 
-        for ($workerId = 1; $workerId <= 5; $workerId++) {
+        for ($workerId = 0; $workerId < 5; $workerId++) {
             $tasks = $repo->assignTasksFairly($workerId, 5);
             $assignedPerWorker[$workerId] = count($tasks);
 

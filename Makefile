@@ -125,15 +125,15 @@ create-task: ## Create a test task (usage: make create-task case=send_email)
 		echo "Error: Please specify case (e.g., make create-task case=send_email)"; \
 		exit 1; \
 	fi; \
-	curl -X POST http://localhost:8080/api/scheduler/tasks \
+	curl -X POST http://localhost:8180/api/scheduler/tasks \
 		-H "Content-Type: application/json" \
 		-d '{"use_case":"$(case)","payload":{"test":"data"},"scheduled_at":"'$$(date -u +"%Y-%m-%dT%H:%M:%S")'"}'
 
 api-stats: ## Get stats via API
-	@curl -s http://localhost:8080/api/scheduler/stats | json_pp || curl http://localhost:8080/api/scheduler/stats
+	@curl -s http://localhost:8180/api/scheduler/stats | json_pp || curl http://localhost:8180/api/scheduler/stats
 
 health: ## Check API health
-	@curl -s http://localhost:8080/health | json_pp || curl http://localhost:8080/health
+	@curl -s http://localhost:8180/health | json_pp || curl http://localhost:8180/health
 
 ## —— Code Quality ——————————————————————————————————————————————————————————
 cs-fix: ## Fix coding standards (if PHP-CS-Fixer installed)
@@ -158,16 +158,16 @@ cache-clear: ## Clear Symfony cache
 
 ## —— Supervisor ————————————————————————————————————————————————————————————
 supervisor-status: ## Show supervisor workers status
-	$(DOCKER_COMPOSE) exec supervisor supervisorctl status
+	$(DOCKER_COMPOSE) exec supervisor supervisorctl -c /etc/supervisor/conf.d/supervisor.conf status
 
 supervisor-restart: ## Restart all supervisor workers
-	$(DOCKER_COMPOSE) exec supervisor supervisorctl restart scheduler-worker:*
+	$(DOCKER_COMPOSE) exec supervisor supervisorctl -c /etc/supervisor/conf.d/supervisor.conf restart scheduler-worker:*
 
 supervisor-stop: ## Stop all supervisor workers
-	$(DOCKER_COMPOSE) exec supervisor supervisorctl stop scheduler-worker:*
+	$(DOCKER_COMPOSE) exec supervisor supervisorctl -c /etc/supervisor/conf.d/supervisor.conf stop scheduler-worker:*
 
 supervisor-start: ## Start all supervisor workers
-	$(DOCKER_COMPOSE) exec supervisor supervisorctl start scheduler-worker:*
+	$(DOCKER_COMPOSE) exec supervisor supervisorctl -c /etc/supervisor/conf.d/supervisor.conf start scheduler-worker:*
 
 supervisor-logs: ## Show supervisor logs
 	$(DOCKER_COMPOSE) logs -f supervisor

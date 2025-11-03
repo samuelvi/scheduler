@@ -21,7 +21,7 @@ make db-create
 make migrate
 ```
 
-**That's it!** Visit http://localhost:8080/health
+**That's it!** Visit http://localhost:8180/health
 
 ## ⚡ Quick Demo
 
@@ -73,7 +73,7 @@ Worker 4: 107 tasks  ←┘
 
 ## 🐳 Docker Architecture
 
-The system runs 4 Docker services orchestrated by `docker/docker-compose.yml`:
+The system runs 5 Docker services orchestrated by `docker/docker-compose.yml`:
 
 ### Services
 
@@ -87,7 +87,7 @@ The system runs 4 Docker services orchestrated by `docker/docker-compose.yml`:
    - Extensions: pdo_pgsql, intl, zip, opcache
 
 3. **apache** - Apache 2.4 web server
-   - Port: 8080
+   - Port: 8180
    - Serves REST API
 
 4. **supervisor** - Manages 5 workers in parallel
@@ -95,6 +95,10 @@ The system runs 4 Docker services orchestrated by `docker/docker-compose.yml`:
    - Auto-restart on failure
    - Daemon mode with 10s sleep
    - Worker 0 handles stuck task recovery
+
+5. **adminer** - Database management UI
+   - Port: 8280
+   - Web-based database administration tool
 
 ## 🛠️ Essential Commands
 
@@ -154,7 +158,7 @@ make test-interactive  # Run all suites + optional benchmark
 
 ### Create Task (API)
 ```bash
-curl -X POST http://localhost:8080/api/scheduler/tasks \
+curl -X POST http://localhost:8180/api/scheduler/tasks \
   -H "Content-Type: application/json" \
   -d '{
     "use_case": "send_email",
@@ -423,7 +427,28 @@ make clean
 make install
 ```
 
-### Access database directly
+### Access database via Adminer (Web UI)
+
+Adminer provides a web-based interface for database management:
+
+**URL:** http://localhost:8280
+
+**Connection credentials:**
+- **Sistema:** PostgreSQL
+- **Servidor:** postgres
+- **Usuario:** symfony
+- **Contraseña:** symfony
+- **Base de datos:** scheduler
+
+### Quick Access URLs
+
+Direct links to application endpoints:
+
+- **Health Check:** http://localhost:8180/health
+- **Task Statistics:** http://localhost:8180/api/scheduler/stats
+- **Database Manager:** http://localhost:8280
+
+### Access database directly (CLI)
 
 ```bash
 # PostgreSQL

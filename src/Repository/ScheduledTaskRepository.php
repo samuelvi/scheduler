@@ -39,13 +39,14 @@ class ScheduledTaskRepository extends ServiceEntityRepository
         $conn = $this->getEntityManager()->getConnection();
 
         // Acquire database lock for this worker
-        $lockName = 'scheduler_worker_' . $workerId;
+        // PostgreSQL uses pg_try_advisory_lock with integer keys
+        $lockKey = crc32('scheduler_worker_' . $workerId);
         $lockAcquired = $conn->executeQuery(
-            "SELECT GET_LOCK(?, 2) as locked", // 2 seconds timeout
-            [$lockName]
+            "SELECT pg_try_advisory_lock(?)", // Non-blocking advisory lock
+            [$lockKey]
         )->fetchOne();
 
-        if ($lockAcquired != 1) {
+        if (!$lockAcquired) {
             // Could not acquire lock - another instance of this worker is running
             return [];
         }
@@ -124,7 +125,7 @@ class ScheduledTaskRepository extends ServiceEntityRepository
 
         } finally {
             // Always release the lock
-            $conn->executeQuery("SELECT RELEASE_LOCK(?)", [$lockName]);
+            $conn->executeQuery("SELECT pg_advisory_unlock(?)", [$lockKey]);
         }
     }
 

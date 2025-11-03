@@ -17,12 +17,12 @@ services:
 
   php:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
     container_name: scheduler_php
     volumes:
       - type: bind
-        source: ./
+        source: ../
         target: /var/www/html
     networks:
       - scheduler_network
@@ -33,16 +33,16 @@ services:
     image: httpd:2.4-alpine
     container_name: scheduler_apache
     ports:
-      - "8080:80"
+      - "8180:80"
     volumes:
       - type: bind
-        source: ./
+        source: ../
         target: /var/www/html
       - type: bind
-        source: ./docker/apache/vhost.conf
+        source: ./apache/vhost.conf
         target: /usr/local/apache2/conf/extra/vhost.conf
       - type: bind
-        source: ./docker/apache/httpd.conf
+        source: ./apache/httpd.conf
         target: /usr/local/apache2/conf/httpd.conf
     networks:
       - scheduler_network
@@ -51,21 +51,32 @@ services:
 
   supervisor:
     build:
-      context: .
+      context: ..
       dockerfile: docker/supervisor/Dockerfile
     container_name: scheduler_supervisor
     volumes:
       - type: bind
-        source: ./
+        source: ../
         target: /var/www/html
       - type: bind
-        source: ./docker/supervisor/supervisor.conf
+        source: ./supervisor/supervisor.conf
         target: /etc/supervisor/conf.d/supervisor.conf
     networks:
       - scheduler_network
     depends_on:
       - postgres
     restart: unless-stopped
+
+  adminer:
+    image: adminer:latest
+    container_name: scheduler_adminer
+    ports:
+      - "8280:8080"
+    depends_on:
+      - postgres
+    networks:
+      - scheduler_network
+
 
 networks:
   scheduler_network:

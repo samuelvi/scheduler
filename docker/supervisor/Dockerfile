@@ -31,8 +31,5 @@ RUN mkdir -p /var/log/supervisor && \
     mkdir -p /var/run && \
     chmod 755 /var/log/supervisor
 
-# Copy supervisor configuration
-COPY docker/supervisor/supervisor.conf /etc/supervisor/conf.d/supervisor.conf
-
 # Start supervisor
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisor.conf"]
