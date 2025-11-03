@@ -3,7 +3,7 @@
 namespace App\Service;
 
 use App\Entity\ScheduledTask;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Repository\ScheduledTaskRepository;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
 class TaskProcessor
 {
     public function __construct(
-        private EntityManagerInterface $entityManager,
+        private ScheduledTaskRepository $taskRepository,
         private LoggerInterface $logger
     ) {
     }
@@ -206,17 +206,7 @@ class TaskProcessor
      */
     private function markTaskAsCompleted(int $taskId): void
     {
-        $this->entityManager->getConnection()->executeStatement(
-            "UPDATE scheduled_tasks
-             SET status = :completed,
-                 processed_at = NOW(),
-                 updated_at = NOW()
-             WHERE id = :id",
-            [
-                'completed' => ScheduledTask::STATUS_COMPLETED,
-                'id' => $taskId
-            ]
-        );
+        $this->taskRepository->markTaskCompleted($taskId);
     }
 
     /**
@@ -228,18 +218,7 @@ class TaskProcessor
 
         if ($canRetry) {
             // Reset to pending for retry
-            $this->entityManager->getConnection()->executeStatement(
-                "UPDATE scheduled_tasks
-                 SET status = :pending,
-                     last_error = :error,
-                     updated_at = NOW()
-                 WHERE id = :id",
-                [
-                    'pending' => ScheduledTask::STATUS_PENDING,
-                    'error' => substr($e->getMessage(), 0, 5000), // Limit error message length
-                    'id' => $taskId
-                ]
-            );
+            $this->taskRepository->resetTaskForRetry($taskId, $e->getMessage());
 
             $this->logger->error('Task failed', [
                 'task_id' => $taskId,
@@ -254,19 +233,7 @@ class TaskProcessor
             ]);
         } else {
             // Mark as permanently failed
-            $this->entityManager->getConnection()->executeStatement(
-                "UPDATE scheduled_tasks
-                 SET status = :failed,
-                     last_error = :error,
-                     processed_at = NOW(),
-                     updated_at = NOW()
-                 WHERE id = :id",
-                [
-                    'failed' => ScheduledTask::STATUS_FAILED,
-                    'error' => substr($e->getMessage(), 0, 5000),
-                    'id' => $taskId
-                ]
-            );
+            $this->taskRepository->markTaskFailed($taskId, $e->getMessage());
 
             $this->logger->error('Task permanently failed after max attempts', [
                 'task_id' => $taskId,

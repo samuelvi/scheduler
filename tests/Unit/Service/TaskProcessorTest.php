@@ -3,30 +3,23 @@
 namespace App\Tests\Unit\Service;
 
 use App\Entity\ScheduledTask;
+use App\Repository\ScheduledTaskRepository;
 use App\Service\TaskProcessor;
-use Doctrine\DBAL\Connection;
-use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class TaskProcessorTest extends TestCase
 {
-    private EntityManagerInterface $entityManager;
-    private Connection $connection;
+    private ScheduledTaskRepository $taskRepository;
     private LoggerInterface $logger;
     private TaskProcessor $processor;
 
     protected function setUp(): void
     {
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-        $this->connection = $this->createMock(Connection::class);
+        $this->taskRepository = $this->createMock(ScheduledTaskRepository::class);
         $this->logger = $this->createMock(LoggerInterface::class);
 
-        $this->entityManager
-            ->method('getConnection')
-            ->willReturn($this->connection);
-
-        $this->processor = new TaskProcessor($this->entityManager, $this->logger);
+        $this->processor = new TaskProcessor($this->taskRepository, $this->logger);
     }
 
     public function testProcessSuccessfulTask(): void
@@ -36,19 +29,14 @@ class TaskProcessorTest extends TestCase
             'use_case' => 'send_email',
             'payload' => json_encode(['to' => 'test@example.com', 'subject' => 'Test']),
             'scheduled_at' => '2025-01-03 10:00:00',
-            'attempts' => 1
+            'attempts' => 1,
+            'max_attempts' => 3
         ];
 
-        $this->connection
+        $this->taskRepository
             ->expects($this->once())
-            ->method('executeStatement')
-            ->with(
-                $this->stringContains('UPDATE scheduled_tasks'),
-                $this->callback(function ($params) {
-                    return $params['completed'] === ScheduledTask::STATUS_COMPLETED
-                        && $params['id'] === 1;
-                })
-            );
+            ->method('markTaskCompleted')
+            ->with(1);
 
         $this->logger
             ->expects($this->exactly(2))
@@ -78,15 +66,10 @@ class TaskProcessorTest extends TestCase
                 })
             );
 
-        $this->connection
+        $this->taskRepository
             ->expects($this->once())
-            ->method('executeStatement')
-            ->with(
-                $this->stringContains('UPDATE'),
-                $this->callback(function ($params) {
-                    return $params['pending'] === ScheduledTask::STATUS_PENDING;
-                })
-            );
+            ->method('resetTaskForRetry')
+            ->with(1, $this->stringContains('Unknown use case'));
 
         $this->processor->process($taskData);
     }
@@ -109,9 +92,9 @@ class TaskProcessorTest extends TestCase
             ->expects($this->once())
             ->method('error');
 
-        $this->connection
+        $this->taskRepository
             ->expects($this->once())
-            ->method('executeStatement');
+            ->method('resetTaskForRetry');
 
         $this->processor->process($taskData);
     }
@@ -130,15 +113,10 @@ class TaskProcessorTest extends TestCase
             'max_attempts' => 3
         ];
 
-        $this->connection
+        $this->taskRepository
             ->expects($this->once())
-            ->method('executeStatement')
-            ->with(
-                $this->stringContains('UPDATE'),
-                $this->callback(function ($params) {
-                    return $params['failed'] === ScheduledTask::STATUS_FAILED;
-                })
-            );
+            ->method('markTaskFailed')
+            ->with(1, $this->stringContains('Unknown use case'));
 
         $this->logger
             ->expects($this->once())
@@ -161,18 +139,14 @@ class TaskProcessorTest extends TestCase
             'use_case' => 'cleanup_data',
             'payload' => json_encode([]),
             'scheduled_at' => '2025-01-03 10:00:00',
-            'attempts' => 1
+            'attempts' => 1,
+            'max_attempts' => 3
         ];
 
-        $this->connection
+        $this->taskRepository
             ->expects($this->once())
-            ->method('executeStatement')
-            ->with(
-                $this->stringContains('UPDATE'),
-                $this->callback(function ($params) {
-                    return $params['completed'] === ScheduledTask::STATUS_COMPLETED;
-                })
-            );
+            ->method('markTaskCompleted')
+            ->with(1);
 
         $this->processor->process($taskData);
     }
