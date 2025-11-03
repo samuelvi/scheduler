@@ -18,6 +18,77 @@ class ScheduledTaskRepository extends ServiceEntityRepository
     }
 
     /**
+     * Detect the database platform being used.
+     *
+     * @return string 'postgresql', 'mysql', or 'mariadb'
+     */
+    private function getDatabasePlatform(): string
+    {
+        $platform = $this->getEntityManager()->getConnection()->getDatabasePlatform()->getName();
+
+        return match (true) {
+            str_contains($platform, 'postgres') => 'postgresql',
+            str_contains($platform, 'mysql') => 'mysql',
+            default => 'mysql', // Fallback to MySQL/MariaDB
+        };
+    }
+
+    /**
+     * Acquire a database lock using the appropriate method for the current database.
+     *
+     * @param string $lockName Lock identifier
+     * @param int $timeout Timeout in seconds (0 = non-blocking)
+     * @return bool True if lock was acquired
+     */
+    private function acquireLock(string $lockName, int $timeout = 0): bool
+    {
+        $conn = $this->getEntityManager()->getConnection();
+        $platform = $this->getDatabasePlatform();
+
+        if ($platform === 'postgresql') {
+            // PostgreSQL: Use advisory locks (integer hash key)
+            $lockKey = crc32($lockName);
+            return (bool) $conn->executeQuery(
+                "SELECT pg_try_advisory_lock(?)",
+                [$lockKey]
+            )->fetchOne();
+        } else {
+            // MySQL/MariaDB: Use GET_LOCK with named locks
+            return (bool) $conn->executeQuery(
+                "SELECT GET_LOCK(?, ?)",
+                [$lockName, $timeout]
+            )->fetchOne();
+        }
+    }
+
+    /**
+     * Release a database lock using the appropriate method for the current database.
+     *
+     * @param string $lockName Lock identifier
+     * @return bool True if lock was released
+     */
+    private function releaseLock(string $lockName): bool
+    {
+        $conn = $this->getEntityManager()->getConnection();
+        $platform = $this->getDatabasePlatform();
+
+        if ($platform === 'postgresql') {
+            // PostgreSQL: Release advisory lock
+            $lockKey = crc32($lockName);
+            return (bool) $conn->executeQuery(
+                "SELECT pg_advisory_unlock(?)",
+                [$lockKey]
+            )->fetchOne();
+        } else {
+            // MySQL/MariaDB: Release named lock
+            return (bool) $conn->executeQuery(
+                "SELECT RELEASE_LOCK(?)",
+                [$lockName]
+            )->fetchOne();
+        }
+    }
+
+    /**
      * Distributes pending tasks fairly among workers.
      *
      * Strategy:
@@ -36,20 +107,16 @@ class ScheduledTaskRepository extends ServiceEntityRepository
             throw new \InvalidArgumentException("Invalid worker_id: must be between 0 and " . ($totalWorkers - 1));
         }
 
-        $conn = $this->getEntityManager()->getConnection();
-
         // Acquire database lock for this worker
-        // PostgreSQL uses pg_try_advisory_lock with integer keys
-        $lockKey = crc32('scheduler_worker_' . $workerId);
-        $lockAcquired = $conn->executeQuery(
-            "SELECT pg_try_advisory_lock(?)", // Non-blocking advisory lock
-            [$lockKey]
-        )->fetchOne();
+        // Automatically uses the appropriate locking method (PostgreSQL advisory locks or MySQL/MariaDB GET_LOCK)
+        $lockName = 'scheduler_worker_' . $workerId;
 
-        if (!$lockAcquired) {
+        if (!$this->acquireLock($lockName, 0)) {
             // Could not acquire lock - another instance of this worker is running
             return [];
         }
+
+        $conn = $this->getEntityManager()->getConnection();
 
         try {
             // STEP 1: Count pending tasks
@@ -111,21 +178,25 @@ class ScheduledTaskRepository extends ServiceEntityRepository
             ]);
 
             // STEP 4: Fetch assigned tasks
+            // Calculate the time threshold in PHP for database compatibility
+            $tenSecondsAgo = (new \DateTime())->modify('-10 seconds')->format('Y-m-d H:i:s');
+
             return $conn->executeQuery("
                 SELECT *
                 FROM scheduled_tasks
                 WHERE worker_id = :worker_id
                   AND status = :processing
-                  AND updated_at >= NOW() - INTERVAL '10 seconds'
+                  AND updated_at >= :time_threshold
                 ORDER BY scheduled_at ASC
             ", [
                 'worker_id' => $workerId,
-                'processing' => ScheduledTask::STATUS_PROCESSING
+                'processing' => ScheduledTask::STATUS_PROCESSING,
+                'time_threshold' => $tenSecondsAgo
             ])->fetchAllAssociative();
 
         } finally {
             // Always release the lock
-            $conn->executeQuery("SELECT pg_advisory_unlock(?)", [$lockKey]);
+            $this->releaseLock($lockName);
         }
     }
 
@@ -133,8 +204,12 @@ class ScheduledTaskRepository extends ServiceEntityRepository
      * Fetch and lock tasks ready for processing using FOR UPDATE SKIP LOCKED.
      * This ensures multiple workers can run concurrently without conflicts.
      *
-     * NOTE: This method is kept for PostgreSQL compatibility.
-     * For MariaDB, use assignTasksFairly() instead.
+     * NOTE: FOR UPDATE SKIP LOCKED requires:
+     *  - PostgreSQL 9.5+
+     *  - MySQL 8.0+
+     *  - MariaDB 10.6+
+     *
+     * For older database versions or better worker distribution, use assignTasksFairly() instead.
      *
      * @param int $limit Maximum number of tasks to fetch
      * @return array Array of task data (not entities, for performance)
@@ -177,7 +252,7 @@ class ScheduledTaskRepository extends ServiceEntityRepository
                  SET status = :processing,
                      attempts = attempts + 1,
                      updated_at = NOW()
-                 WHERE id = ANY(:ids)",
+                 WHERE id IN (:ids)",
                 [
                     'processing' => ScheduledTask::STATUS_PROCESSING,
                     'ids' => $ids
