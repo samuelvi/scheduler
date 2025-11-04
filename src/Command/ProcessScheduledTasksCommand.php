@@ -13,6 +13,15 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 
+/**
+ * Process scheduled tasks using FOR UPDATE SKIP LOCKED for concurrency safety.
+ *
+ * Examples:
+ * - Single run (100 tasks): php bin/console app:process-scheduled-tasks
+ * - Single run (custom limit): php bin/console app:process-scheduled-tasks --limit=1000
+ * - Daemon mode: php bin/console app:process-scheduled-tasks --daemon --sleep=10 --limit=100
+ * - Quick exit (testing): php bin/console app:process-scheduled-tasks --limit=10 --max-execution-time=0
+ */
 #[AsCommand(
     name: 'app:process-scheduled-tasks',
     description: 'Process scheduled tasks that are due for execution',

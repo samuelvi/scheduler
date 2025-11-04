@@ -11,6 +11,14 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * Benchmark scheduler performance with bulk task insertion and processing.
+ *
+ * Examples:
+ * - Default (1000 tasks): php bin/console app:benchmark-scheduler
+ * - Custom amount: php bin/console app:benchmark-scheduler --tasks=10000
+ * - Clean after benchmark: php bin/console app:benchmark-scheduler --tasks=5000 --clean
+ */
 #[AsCommand(
     name: 'app:benchmark-scheduler',
     description: 'Benchmark scheduler performance with 1000 tasks',

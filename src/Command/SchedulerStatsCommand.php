@@ -9,6 +9,11 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * Display task statistics (pending, processing, completed, failed, overdue).
+ *
+ * Example: php bin/console app:scheduler:stats
+ */
 #[AsCommand(
     name: 'app:scheduler:stats',
     description: 'Display statistics about scheduled tasks',

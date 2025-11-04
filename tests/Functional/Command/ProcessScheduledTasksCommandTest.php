@@ -33,54 +33,72 @@ class ProcessScheduledTasksCommandTest extends DatabaseTestCase
         $this->entityManager->flush();
 
         $this->commandTester->execute([
-            '--worker-id' => 1,
-            '--total-workers' => 5,
+            '--limit' => 10,
+            '--max-execution-time' => 0,
         ]);
 
         $this->assertEquals(0, $this->commandTester->getStatusCode());
         $output = $this->commandTester->getDisplay();
-        $this->assertStringContainsString('Worker 1 finished', $output);
+        $this->assertStringContainsString('Worker finished', $output);
+        $this->assertStringContainsString('Processing 10 tasks', $output);
     }
 
-    public function testCommandWithInvalidWorkerId(): void
+    public function testCommandWithCustomLimit(): void
     {
+        // Create 20 tasks
+        for ($i = 0; $i < 20; $i++) {
+            $task = new ScheduledTask();
+            $task->setUseCase('send_notification');
+            $task->setPayload(['message' => "Test {$i}"]);
+            $task->setScheduledAt(new \DateTime());
+            $this->entityManager->persist($task);
+        }
+        $this->entityManager->flush();
+
+        // Process only 5 tasks
         $this->commandTester->execute([
-            '--worker-id' => -1,
-            '--total-workers' => 5,
+            '--limit' => 5,
+            '--max-execution-time' => 0,
         ]);
 
-        $this->assertEquals(1, $this->commandTester->getStatusCode());
+        $this->assertEquals(0, $this->commandTester->getStatusCode());
         $output = $this->commandTester->getDisplay();
-        $this->assertStringContainsString('Worker ID must be between 0 and 4', $output);
+        $this->assertStringContainsString('Processing 5 tasks', $output);
+        $this->assertStringContainsString('Processed 5/5 tasks', $output);
     }
 
-    public function testCommandWithWorkerIdExceedingTotal(): void
+    public function testCommandRespectsMaxExecutionTime(): void
     {
+        // Create tasks
+        for ($i = 0; $i < 5; $i++) {
+            $task = new ScheduledTask();
+            $task->setUseCase('send_notification');
+            $task->setPayload(['message' => "Test {$i}"]);
+            $task->setScheduledAt(new \DateTime());
+            $this->entityManager->persist($task);
+        }
+        $this->entityManager->flush();
+
+        // Execute with very short max execution time
         $this->commandTester->execute([
-            '--worker-id' => 10,
-            '--total-workers' => 5,
+            '--max-execution-time' => 1,
         ]);
 
-        $this->assertEquals(1, $this->commandTester->getStatusCode());
-        $output = $this->commandTester->getDisplay();
-        $this->assertStringContainsString('Worker ID must be between 0 and 4', $output);
+        $this->assertEquals(0, $this->commandTester->getStatusCode());
     }
 
     public function testCommandWithNoTasks(): void
     {
-        $this->commandTester->execute([
-            '--worker-id' => 0,
-            '--total-workers' => 5,
-        ]);
+        $this->commandTester->execute([]);
 
         $this->assertEquals(0, $this->commandTester->getStatusCode());
         $output = $this->commandTester->getDisplay();
         $this->assertStringContainsString('No tasks to process', $output);
     }
 
-    public function testCommandDistributesTasksFairly(): void
+    public function testCommandProcessesUpToLimit(): void
     {
-        // Create 20 tasks (easier to verify)
+        // Create 20 tasks
         for ($i = 0; $i < 20; $i++) {
             $task = new ScheduledTask();
             $task->setUseCase('send_notification');
@@ -90,18 +108,35 @@ class ProcessScheduledTasksCommandTest extends DatabaseTestCase
         }
         $this->entityManager->flush();
 
-        // Run worker 0 with 5 total workers
+        // Process only 10 tasks with limit and terminate after first iteration
         $this->commandTester->execute([
-            '--worker-id' => 0,
-            '--total-workers' => 5,
+            '--limit' => 10,
+            '--max-execution-time' => 0, // Exit immediately after first iteration
         ]);
 
         $this->assertEquals(0, $this->commandTester->getStatusCode());
         $output = $this->commandTester->getDisplay();
 
-        // Worker 0 should process 4 tasks (20 / 5 = 4 per worker)
-        $this->assertStringContainsString('Processing 4 tasks', $output);
-        $this->assertStringContainsString('Processed 4/4 tasks', $output);
+        // Should process exactly 10 tasks
+        $this->assertStringContainsString('Processing 10 tasks', $output);
+        $this->assertStringContainsString('Processed 10/10 tasks', $output);
+
+        // Clear entity manager to get fresh data from DB
+        $this->entityManager->clear();
+
+        // Verify 10 tasks were completed and 10 remain pending
+        $completedCount = (int) $this->entityManager->getConnection()->executeQuery(
+            'SELECT COUNT(*) FROM scheduled_tasks WHERE status = ?',
+            [ScheduledTask::STATUS_COMPLETED]
+        )->fetchOne();
+
+        $pendingCount = (int) $this->entityManager->getConnection()->executeQuery(
+            'SELECT COUNT(*) FROM scheduled_tasks WHERE status = ?',
+            [ScheduledTask::STATUS_PENDING]
+        )->fetchOne();
+
+        $this->assertEquals(10, $completedCount, 'Should have 10 completed tasks');
+        $this->assertEquals(10, $pendingCount, 'Should have 10 pending tasks');
     }
 
     /**
@@ -119,10 +154,7 @@ class ProcessScheduledTasksCommandTest extends DatabaseTestCase
         }
         $this->entityManager->flush();
 
-        $this->commandTester->execute([
-            '--worker-id' => 1,
-            '--total-workers' => 5,
-        ]);
+        $this->commandTester->execute([]);
 
         $output = $this->commandTester->getDisplay();
         $this->assertStringContainsString('No tasks to process', $output);

@@ -11,6 +11,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 
+/**
+ * Clean up old completed and failed tasks to prevent table bloat.
+ *
+ * Examples:
+ * - Default (30 days): php bin/console app:scheduler:cleanup
+ * - Custom retention: php bin/console app:scheduler:cleanup --days=7
+ */
 #[AsCommand(
     name: 'app:scheduler:cleanup',
     description: 'Clean up old completed and failed tasks',

@@ -60,26 +60,28 @@ switch-mariadb: ## Switch to MariaDB
 	./scripts/switch-db.sh mariadb
 
 ## —— Testing ———————————————————————————————————————————————————————————————
-test: ## Run all tests (non-interactive, for CI/CD)
+test: test-all-db ## Run all tests against all databases (PostgreSQL + MariaDB)
+
+test-postgres: ## Run tests with PostgreSQL only
 	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit
 
-test-unit: ## Run unit tests only
-	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --testsuite=Unit
-
-test-integration: ## Run integration tests only
-	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --testsuite=Integration
-
-test-functional: ## Run functional tests only
-	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --testsuite=Functional
-
-test-coverage: ## Run tests with coverage (requires Xdebug)
-	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --coverage-html coverage/
-
-test-mariadb: ## Run tests with MariaDB
+test-mariadb: ## Run tests with MariaDB only
 	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --configuration phpunit-mariadb.xml.dist
 
 test-all-db: ## Run tests against all databases (PostgreSQL + MariaDB)
 	./scripts/test-all-db.sh
+
+test-unit: ## Run unit tests only (current DB)
+	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --testsuite=Unit
+
+test-integration: ## Run integration tests only (current DB)
+	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --testsuite=Integration
+
+test-functional: ## Run functional tests only (current DB)
+	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --testsuite=Functional
+
+test-coverage: ## Run tests with coverage (requires Xdebug)
+	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --coverage-html coverage/
 
 test-interactive: ## Run all test suites with interactive benchmark prompt (developer-friendly)
 	@echo "======================================"
