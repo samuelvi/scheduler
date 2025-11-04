@@ -5,60 +5,21 @@ namespace App\Database;
 use Doctrine\DBAL\Connection as DBALConnection;
 
 /**
- * Manages database connections using PDO for optimal performance.
+ * Manages database connections with efficient query execution.
  *
- * This class wraps Doctrine's DBAL connection to provide direct PDO access
+ * This class wraps Doctrine's DBAL connection to provide a clean interface
  * while leveraging Symfony's connection pool management.
+ *
+ * Note: We use Doctrine DBAL directly instead of extracting PDO for better
+ * compatibility across different environments and Doctrine versions.
  */
 class DatabaseConnection
 {
-    private ?\PDO $pdo = null;
     private ?string $platform = null;
 
     public function __construct(
         private DBALConnection $connection
     ) {
-    }
-
-    /**
-     * Get native PDO connection from Doctrine DBAL.
-     * Reuses the same connection (pool management by Symfony).
-     *
-     * @return \PDO
-     */
-    public function getPDO(): \PDO
-    {
-        if ($this->pdo === null) {
-            // Get the wrapped connection from Doctrine DBAL
-            $wrappedConnection = $this->connection->getNativeConnection();
-
-            // In Doctrine DBAL 3.x/4.x, this returns a Driver Connection wrapper
-            // We need to extract the underlying PDO object
-            if ($wrappedConnection instanceof \PDO) {
-                $this->pdo = $wrappedConnection;
-            } elseif (method_exists($wrappedConnection, 'getWrappedConnection')) {
-                $this->pdo = $wrappedConnection->getWrappedConnection();
-            } elseif ($wrappedConnection instanceof \Doctrine\DBAL\Driver\PDO\Connection) {
-                // For older DBAL versions
-                $this->pdo = $wrappedConnection->getWrappedConnection();
-            } else {
-                // Fallback: try reflection to get the PDO instance
-                $reflection = new \ReflectionClass($wrappedConnection);
-                if ($reflection->hasProperty('connection')) {
-                    $property = $reflection->getProperty('connection');
-                    $property->setAccessible(true);
-                    $this->pdo = $property->getValue($wrappedConnection);
-                } else {
-                    throw new \RuntimeException('Unable to extract PDO from Doctrine connection');
-                }
-            }
-
-            // Configure PDO for better error handling
-            $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-            $this->pdo->setAttribute(\PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_ASSOC);
-        }
-
-        return $this->pdo;
     }
 
     /**
@@ -82,28 +43,14 @@ class DatabaseConnection
     }
 
     /**
-     * Prepare a SQL statement.
+     * Prepare a SQL statement using Doctrine DBAL.
      *
      * @param string $sql
-     * @return \PDOStatement
+     * @return \Doctrine\DBAL\Statement
      */
-    public function prepare(string $sql): \PDOStatement
+    public function prepare(string $sql): \Doctrine\DBAL\Statement
     {
-        return $this->getPDO()->prepare($sql);
-    }
-
-    /**
-     * Execute a query and return a statement.
-     *
-     * @param string $sql
-     * @param array $params
-     * @return \PDOStatement
-     */
-    public function query(string $sql, array $params = []): \PDOStatement
-    {
-        $stmt = $this->prepare($sql);
-        $stmt->execute($params);
-        return $stmt;
+        return $this->connection->prepare($sql);
     }
 
     /**
@@ -115,9 +62,7 @@ class DatabaseConnection
      */
     public function execute(string $sql, array $params = []): int
     {
-        $stmt = $this->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->rowCount();
+        return $this->connection->executeStatement($sql, $params);
     }
 
     /**
@@ -129,8 +74,7 @@ class DatabaseConnection
      */
     public function fetchOne(string $sql, array $params = []): mixed
     {
-        $stmt = $this->query($sql, $params);
-        return $stmt->fetchColumn();
+        return $this->connection->fetchOne($sql, $params);
     }
 
     /**
@@ -142,8 +86,7 @@ class DatabaseConnection
      */
     public function fetchAll(string $sql, array $params = []): array
     {
-        $stmt = $this->query($sql, $params);
-        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        return $this->connection->fetchAllAssociative($sql, $params);
     }
 
     /**
@@ -155,32 +98,31 @@ class DatabaseConnection
      */
     public function fetchRow(string $sql, array $params = []): array|false
     {
-        $stmt = $this->query($sql, $params);
-        return $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $this->connection->fetchAssociative($sql, $params);
     }
 
     /**
      * Begin a transaction.
      */
-    public function beginTransaction(): bool
+    public function beginTransaction(): void
     {
-        return $this->getPDO()->beginTransaction();
+        $this->connection->beginTransaction();
     }
 
     /**
      * Commit a transaction.
      */
-    public function commit(): bool
+    public function commit(): void
     {
-        return $this->getPDO()->commit();
+        $this->connection->commit();
     }
 
     /**
      * Rollback a transaction.
      */
-    public function rollBack(): bool
+    public function rollBack(): void
     {
-        return $this->getPDO()->rollBack();
+        $this->connection->rollBack();
     }
 
     /**
@@ -188,6 +130,6 @@ class DatabaseConnection
      */
     public function lastInsertId(): string
     {
-        return $this->getPDO()->lastInsertId();
+        return $this->connection->lastInsertId();
     }
 }

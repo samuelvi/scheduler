@@ -93,9 +93,10 @@ class ScheduledTaskRepository extends ServiceEntityRepository
 
         try {
             // STEP 1: Count pending tasks
-            $stmt = $this->db->prepare(SchedulerQueries::COUNT_PENDING_TASKS);
-            $stmt->execute(['pending' => SchedulerQueries::getStatusPending()]);
-            $totalPending = (int) $stmt->fetchColumn();
+            $totalPending = (int) $this->db->fetchOne(
+                SchedulerQueries::COUNT_PENDING_TASKS,
+                ['pending' => SchedulerQueries::getStatusPending()]
+            );
 
             if ($totalPending === 0) {
                 return [];
@@ -119,8 +120,7 @@ class ScheduledTaskRepository extends ServiceEntityRepository
             }
 
             // STEP 3: Assign tasks using UPDATE with ORDER BY + LIMIT + subquery
-            $stmt = $this->db->prepare(SchedulerQueries::ASSIGN_TASKS_TO_WORKER);
-            $stmt->execute([
+            $this->db->execute(SchedulerQueries::ASSIGN_TASKS_TO_WORKER, [
                 'processing' => SchedulerQueries::getStatusProcessing(),
                 'pending' => SchedulerQueries::getStatusPending(),
                 'worker_id' => $workerId,
@@ -132,14 +132,11 @@ class ScheduledTaskRepository extends ServiceEntityRepository
             // Calculate the time threshold in PHP for database compatibility
             $tenSecondsAgo = (new \DateTime())->modify('-10 seconds')->format('Y-m-d H:i:s');
 
-            $stmt = $this->db->prepare(SchedulerQueries::FETCH_ASSIGNED_TASKS);
-            $stmt->execute([
+            return $this->db->fetchAll(SchedulerQueries::FETCH_ASSIGNED_TASKS, [
                 'worker_id' => $workerId,
                 'processing' => SchedulerQueries::getStatusProcessing(),
                 'time_threshold' => $tenSecondsAgo
             ]);
-
-            return $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
         } finally {
             // Always release the lock
@@ -168,11 +165,11 @@ class ScheduledTaskRepository extends ServiceEntityRepository
         try {
             // Step 1: SELECT tasks with lock
             $stmt = $this->db->prepare(SchedulerQueries::SELECT_TASKS_FOR_LOCKING);
-            $stmt->bindValue('status', SchedulerQueries::getStatusPending(), \PDO::PARAM_STR);
-            $stmt->bindValue('limit', $limit, \PDO::PARAM_INT);
-            $stmt->execute();
+            $stmt->bindValue('status', SchedulerQueries::getStatusPending());
+            $stmt->bindValue('limit', $limit);
+            $result = $stmt->executeQuery();
 
-            $tasks = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $tasks = $result->fetchAllAssociative();
 
             if (empty($tasks)) {
                 $this->db->commit();
@@ -182,19 +179,19 @@ class ScheduledTaskRepository extends ServiceEntityRepository
             $ids = array_column($tasks, 'id');
 
             // Step 2: Mark as processing IMMEDIATELY
-            // Build IN clause manually for PDO
+            // Build IN clause for multiple IDs
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $sql = str_replace('(:ids)', "($placeholders)", SchedulerQueries::MARK_TASKS_AS_PROCESSING);
 
             $stmt = $this->db->prepare($sql);
-            $stmt->bindValue(1, SchedulerQueries::getStatusProcessing(), \PDO::PARAM_STR);
+            $stmt->bindValue(1, SchedulerQueries::getStatusProcessing());
 
             // Bind each ID
             foreach ($ids as $index => $id) {
-                $stmt->bindValue($index + 2, $id, \PDO::PARAM_INT);
+                $stmt->bindValue($index + 2, $id);
             }
 
-            $stmt->execute();
+            $stmt->executeStatement();
 
             $this->db->commit();
 
@@ -217,14 +214,11 @@ class ScheduledTaskRepository extends ServiceEntityRepository
     {
         $timeoutDate = (new \DateTime("-{$timeoutMinutes} minutes"))->format('Y-m-d H:i:s');
 
-        $stmt = $this->db->prepare(SchedulerQueries::RESET_STUCK_TASKS);
-        $stmt->execute([
+        return $this->db->execute(SchedulerQueries::RESET_STUCK_TASKS, [
             'pending' => SchedulerQueries::getStatusPending(),
             'processing' => SchedulerQueries::getStatusProcessing(),
             'timeout' => $timeoutDate
         ]);
-
-        return $stmt->rowCount();
     }
 
     /**
@@ -234,10 +228,7 @@ class ScheduledTaskRepository extends ServiceEntityRepository
      */
     public function getStatistics(): array
     {
-        $stmt = $this->db->prepare(SchedulerQueries::GET_STATISTICS);
-        $stmt->execute();
-
-        $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $results = $this->db->fetchAll(SchedulerQueries::GET_STATISTICS);
 
         $stats = [];
         foreach ($results as $row) {
@@ -260,13 +251,10 @@ class ScheduledTaskRepository extends ServiceEntityRepository
     {
         $now = (new \DateTime())->format('Y-m-d H:i:s');
 
-        $stmt = $this->db->prepare(SchedulerQueries::COUNT_OVERDUE_TASKS);
-        $stmt->execute([
+        return (int) $this->db->fetchOne(SchedulerQueries::COUNT_OVERDUE_TASKS, [
             'now' => $now,
             'pending' => SchedulerQueries::getStatusPending()
         ]);
-
-        return (int) $stmt->fetchColumn();
     }
 
     /**
@@ -279,14 +267,11 @@ class ScheduledTaskRepository extends ServiceEntityRepository
     {
         $threshold = (new \DateTime("-{$daysOld} days"))->format('Y-m-d H:i:s');
 
-        $stmt = $this->db->prepare(SchedulerQueries::DELETE_OLD_TASKS);
-        $stmt->execute([
+        return $this->db->execute(SchedulerQueries::DELETE_OLD_TASKS, [
             'completed' => SchedulerQueries::getStatusCompleted(),
             'failed' => SchedulerQueries::getStatusFailed(),
             'threshold' => $threshold
         ]);
-
-        return $stmt->rowCount();
     }
 
     /**
@@ -297,13 +282,10 @@ class ScheduledTaskRepository extends ServiceEntityRepository
      */
     public function markTaskCompleted(int $taskId): int
     {
-        $stmt = $this->db->prepare(SchedulerQueries::MARK_TASK_COMPLETED);
-        $stmt->execute([
+        return $this->db->execute(SchedulerQueries::MARK_TASK_COMPLETED, [
             'completed' => SchedulerQueries::getStatusCompleted(),
             'id' => $taskId
         ]);
-
-        return $stmt->rowCount();
     }
 
     /**
@@ -315,14 +297,11 @@ class ScheduledTaskRepository extends ServiceEntityRepository
      */
     public function markTaskFailed(int $taskId, string $error): int
     {
-        $stmt = $this->db->prepare(SchedulerQueries::MARK_TASK_FAILED);
-        $stmt->execute([
+        return $this->db->execute(SchedulerQueries::MARK_TASK_FAILED, [
             'failed' => SchedulerQueries::getStatusFailed(),
             'id' => $taskId,
             'error' => substr($error, 0, 5000) // Limit error length
         ]);
-
-        return $stmt->rowCount();
     }
 
     /**
@@ -334,13 +313,10 @@ class ScheduledTaskRepository extends ServiceEntityRepository
      */
     public function resetTaskForRetry(int $taskId, string $error): int
     {
-        $stmt = $this->db->prepare(SchedulerQueries::RESET_TASK_FOR_RETRY);
-        $stmt->execute([
+        return $this->db->execute(SchedulerQueries::RESET_TASK_FOR_RETRY, [
             'pending' => SchedulerQueries::getStatusPending(),
             'id' => $taskId,
             'error' => substr($error, 0, 5000) // Limit error length
         ]);
-
-        return $stmt->rowCount();
     }
 }
