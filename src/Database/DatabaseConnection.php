@@ -29,18 +29,33 @@ class DatabaseConnection
     public function getPDO(): \PDO
     {
         if ($this->pdo === null) {
-            // Get native PDO from Doctrine's wrapped connection
-            $this->pdo = $this->connection->getNativeConnection();
+            // Get the wrapped connection from Doctrine DBAL
+            $wrappedConnection = $this->connection->getNativeConnection();
 
-            // Ensure it's really a PDO instance (Doctrine wraps it)
-            if ($this->pdo instanceof \PDO) {
-                // Configure PDO for better error handling
-                $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-                $this->pdo->setAttribute(\PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_ASSOC);
+            // In Doctrine DBAL 3.x/4.x, this returns a Driver Connection wrapper
+            // We need to extract the underlying PDO object
+            if ($wrappedConnection instanceof \PDO) {
+                $this->pdo = $wrappedConnection;
+            } elseif (method_exists($wrappedConnection, 'getWrappedConnection')) {
+                $this->pdo = $wrappedConnection->getWrappedConnection();
+            } elseif ($wrappedConnection instanceof \Doctrine\DBAL\Driver\PDO\Connection) {
+                // For older DBAL versions
+                $this->pdo = $wrappedConnection->getWrappedConnection();
             } else {
-                // If it's a Doctrine wrapper, unwrap it
-                $this->pdo = $this->connection->getWrappedConnection();
+                // Fallback: try reflection to get the PDO instance
+                $reflection = new \ReflectionClass($wrappedConnection);
+                if ($reflection->hasProperty('connection')) {
+                    $property = $reflection->getProperty('connection');
+                    $property->setAccessible(true);
+                    $this->pdo = $property->getValue($wrappedConnection);
+                } else {
+                    throw new \RuntimeException('Unable to extract PDO from Doctrine connection');
+                }
             }
+
+            // Configure PDO for better error handling
+            $this->pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $this->pdo->setAttribute(\PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_ASSOC);
         }
 
         return $this->pdo;
