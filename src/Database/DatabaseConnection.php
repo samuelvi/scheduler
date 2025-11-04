@@ -25,7 +25,7 @@ class DatabaseConnection
     /**
      * Detect the database platform.
      *
-     * @return string 'postgresql', 'mysql', or 'mariadb'
+     * @return string 'postgresql', 'mysql', 'mariadb', or 'sqlite'
      */
     public function getPlatform(): string
     {
@@ -35,6 +35,7 @@ class DatabaseConnection
             $this->platform = match (true) {
                 str_contains($platformName, 'postgres') => 'postgresql',
                 str_contains($platformName, 'mysql') => 'mysql',
+                str_contains($platformName, 'sqlite') => 'sqlite',
                 default => 'mysql', // Fallback to MySQL/MariaDB
             };
         }

@@ -4,28 +4,16 @@ namespace App\Tests\Integration\Repository;
 
 use App\Entity\ScheduledTask;
 use App\Repository\ScheduledTaskRepository;
-use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use App\Tests\DatabaseTestCase;
 
-class ScheduledTaskRepositoryTest extends KernelTestCase
+class ScheduledTaskRepositoryTest extends DatabaseTestCase
 {
-    private EntityManagerInterface $entityManager;
     private ScheduledTaskRepository $repository;
 
     protected function setUp(): void
     {
-        self::bootKernel();
-        $this->entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        parent::setUp();
         $this->repository = $this->entityManager->getRepository(ScheduledTask::class);
-
-        // Clean database before each test
-        $this->entityManager->getConnection()->executeStatement('DELETE FROM scheduled_tasks');
-    }
-
-    protected function tearDown(): void
-    {
-        parent::tearDown();
-        $this->entityManager->close();
     }
 
     public function testAssignTasksFairlyWithEvenDistribution(): void

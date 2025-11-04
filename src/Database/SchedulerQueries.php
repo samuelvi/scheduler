@@ -30,7 +30,7 @@ class SchedulerQueries
     public const COUNT_PENDING_TASKS = "
         SELECT COUNT(*)
         FROM scheduled_tasks
-        WHERE scheduled_at <= NOW()
+        WHERE scheduled_at <= CURRENT_TIMESTAMP
           AND status = :pending
           AND attempts < max_attempts
     ";
@@ -41,7 +41,7 @@ class SchedulerQueries
     public const SELECT_TASK_IDS_FOR_ASSIGNMENT = "
         SELECT id
         FROM scheduled_tasks
-        WHERE scheduled_at <= NOW()
+        WHERE scheduled_at <= CURRENT_TIMESTAMP
           AND status = :pending
           AND attempts < max_attempts
         ORDER BY scheduled_at ASC, id ASC
@@ -56,12 +56,12 @@ class SchedulerQueries
         SET status = :processing,
             worker_id = :worker_id,
             attempts = attempts + 1,
-            updated_at = NOW()
+            updated_at = CURRENT_TIMESTAMP
         WHERE id IN (
             SELECT id FROM (
                 SELECT id
                 FROM scheduled_tasks
-                WHERE scheduled_at <= NOW()
+                WHERE scheduled_at <= CURRENT_TIMESTAMP
                   AND status = :pending
                   AND attempts < max_attempts
                 ORDER BY scheduled_at ASC, id ASC
@@ -88,7 +88,7 @@ class SchedulerQueries
     public const SELECT_TASKS_FOR_LOCKING = "
         SELECT *
         FROM scheduled_tasks
-        WHERE scheduled_at <= NOW()
+        WHERE scheduled_at <= CURRENT_TIMESTAMP
           AND status = :status
           AND attempts < max_attempts
         ORDER BY scheduled_at ASC, id ASC
@@ -104,7 +104,7 @@ class SchedulerQueries
         UPDATE scheduled_tasks
         SET status = :processing,
             attempts = attempts + 1,
-            updated_at = NOW()
+            updated_at = CURRENT_TIMESTAMP
         WHERE id IN (:ids)
     ";
 
@@ -157,8 +157,8 @@ class SchedulerQueries
     public const MARK_TASK_COMPLETED = "
         UPDATE scheduled_tasks
         SET status = :completed,
-            processed_at = NOW(),
-            updated_at = NOW()
+            processed_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = :id
     ";
 
@@ -168,8 +168,8 @@ class SchedulerQueries
     public const MARK_TASK_FAILED = "
         UPDATE scheduled_tasks
         SET status = :failed,
-            processed_at = NOW(),
-            updated_at = NOW(),
+            processed_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP,
             last_error = :error
         WHERE id = :id
     ";
@@ -181,7 +181,7 @@ class SchedulerQueries
         UPDATE scheduled_tasks
         SET status = :pending,
             last_error = :error,
-            updated_at = NOW()
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = :id
     ";
 

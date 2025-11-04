@@ -34,7 +34,10 @@ class ScheduledTaskRepository extends ServiceEntityRepository
     {
         $platform = $this->db->getPlatform();
 
-        if ($platform === 'postgresql') {
+        if ($platform === 'sqlite') {
+            // SQLite: No locking support needed for single-threaded tests
+            return true;
+        } elseif ($platform === 'postgresql') {
             // PostgreSQL: Use advisory locks (integer hash key)
             $lockKey = crc32($lockName);
             return (bool) $this->db->fetchOne(SchedulerQueries::LOCK_ACQUIRE_POSTGRESQL, [$lockKey]);
@@ -54,7 +57,10 @@ class ScheduledTaskRepository extends ServiceEntityRepository
     {
         $platform = $this->db->getPlatform();
 
-        if ($platform === 'postgresql') {
+        if ($platform === 'sqlite') {
+            // SQLite: No locking support needed for single-threaded tests
+            return true;
+        } elseif ($platform === 'postgresql') {
             // PostgreSQL: Release advisory lock
             $lockKey = crc32($lockName);
             return (bool) $this->db->fetchOne(SchedulerQueries::LOCK_RELEASE_POSTGRESQL, [$lockKey]);

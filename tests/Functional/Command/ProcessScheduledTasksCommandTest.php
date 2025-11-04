@@ -3,33 +3,21 @@
 namespace App\Tests\Functional\Command;
 
 use App\Entity\ScheduledTask;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Tests\DatabaseTestCase;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 
-class ProcessScheduledTasksCommandTest extends KernelTestCase
+class ProcessScheduledTasksCommandTest extends DatabaseTestCase
 {
-    private EntityManagerInterface $entityManager;
     private CommandTester $commandTester;
 
     protected function setUp(): void
     {
-        self::bootKernel();
-        $this->entityManager = static::getContainer()->get(EntityManagerInterface::class);
+        parent::setUp();
 
         $application = new Application(self::$kernel);
         $command = $application->find('app:process-scheduled-tasks');
         $this->commandTester = new CommandTester($command);
-
-        // Clean database
-        $this->entityManager->getConnection()->executeStatement('DELETE FROM scheduled_tasks');
-    }
-
-    protected function tearDown(): void
-    {
-        parent::tearDown();
-        $this->entityManager->close();
     }
 
     public function testCommandExecutesSuccessfully(): void
