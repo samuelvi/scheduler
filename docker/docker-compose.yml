@@ -15,6 +15,20 @@ services:
     networks:
       - scheduler_network
 
+  postgres_test:
+    image: postgres:15-alpine
+    container_name: scheduler_postgres_test
+    environment:
+      POSTGRES_DB: scheduler_test
+      POSTGRES_USER: symfony
+      POSTGRES_PASSWORD: symfony
+    ports:
+      - "5434:5432"
+    networks:
+      - scheduler_network
+    tmpfs:
+      - /var/lib/postgresql/data
+
   php:
     build:
       context: ..
@@ -28,6 +42,7 @@ services:
       - scheduler_network
     depends_on:
       - postgres
+      - postgres_test
 
   apache:
     image: httpd:2.4-alpine
