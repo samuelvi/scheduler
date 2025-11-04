@@ -86,29 +86,32 @@ class ScheduledTaskRepository extends ServiceEntityRepository
             }
 
             // STEP 3: Assign tasks using UPDATE with ORDER BY + LIMIT + subquery
+            // Note: MariaDB/MySQL don't support placeholders for LIMIT/OFFSET, so we interpolate safely
             $this->db->execute(
-                "UPDATE scheduled_tasks
-                 SET status = :processing,
-                     worker_id = :worker_id,
-                     attempts = attempts + 1,
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE id IN (
-                     SELECT id FROM (
-                         SELECT id
-                         FROM scheduled_tasks
-                         WHERE scheduled_at <= CURRENT_TIMESTAMP
-                           AND status = :pending
-                           AND attempts < max_attempts
-                         ORDER BY scheduled_at ASC, id ASC
-                         LIMIT :limit OFFSET :offset
-                     ) AS subquery
-                 )",
+                sprintf(
+                    "UPDATE scheduled_tasks
+                     SET status = :processing,
+                         worker_id = :worker_id,
+                         attempts = attempts + 1,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id IN (
+                         SELECT id FROM (
+                             SELECT id
+                             FROM scheduled_tasks
+                             WHERE scheduled_at <= CURRENT_TIMESTAMP
+                               AND status = :pending
+                               AND attempts < max_attempts
+                             ORDER BY scheduled_at ASC, id ASC
+                             LIMIT %d OFFSET %d
+                         ) AS subquery
+                     )",
+                    (int) $myTaskCount,
+                    (int) $offset
+                ),
                 [
                     'processing' => ScheduledTask::STATUS_PROCESSING,
                     'pending' => ScheduledTask::STATUS_PENDING,
-                    'worker_id' => $workerId,
-                    'limit' => $myTaskCount,
-                    'offset' => $offset
+                    'worker_id' => $workerId
                 ]
             );
 
@@ -156,18 +159,21 @@ class ScheduledTaskRepository extends ServiceEntityRepository
 
         try {
             // Step 1: SELECT tasks with lock
+            // Note: MariaDB/MySQL don't support placeholders for LIMIT, so we interpolate safely
             $stmt = $this->db->prepare(
-                "SELECT *
-                 FROM scheduled_tasks
-                 WHERE scheduled_at <= CURRENT_TIMESTAMP
-                   AND status = :status
-                   AND attempts < max_attempts
-                 ORDER BY scheduled_at ASC, id ASC
-                 LIMIT :limit
-                 FOR UPDATE SKIP LOCKED"
+                sprintf(
+                    "SELECT *
+                     FROM scheduled_tasks
+                     WHERE scheduled_at <= CURRENT_TIMESTAMP
+                       AND status = :status
+                       AND attempts < max_attempts
+                     ORDER BY scheduled_at ASC, id ASC
+                     LIMIT %d
+                     FOR UPDATE SKIP LOCKED",
+                    (int) $limit
+                )
             );
             $stmt->bindValue('status', ScheduledTask::STATUS_PENDING);
-            $stmt->bindValue('limit', $limit);
             $result = $stmt->executeQuery();
 
             $tasks = $result->fetchAllAssociative();

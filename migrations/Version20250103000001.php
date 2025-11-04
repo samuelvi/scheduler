@@ -26,7 +26,15 @@ final class Version20250103000001 extends AbstractMigration
 
     public function down(Schema $schema): void
     {
-        $this->addSql('DROP INDEX idx_worker_status ON scheduled_tasks');
+        $platform = $this->connection->getDatabasePlatform()->getName();
+
+        if ($platform === 'postgresql') {
+            $this->addSql('DROP INDEX idx_worker_status');
+        } else {
+            // MySQL/MariaDB
+            $this->addSql('DROP INDEX idx_worker_status ON scheduled_tasks');
+        }
+
         $this->addSql('ALTER TABLE scheduled_tasks DROP COLUMN worker_id');
     }
 }

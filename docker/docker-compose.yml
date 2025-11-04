@@ -29,6 +29,40 @@ services:
     tmpfs:
       - /var/lib/postgresql/data
 
+  mariadb:
+    image: mariadb:10.11
+    container_name: scheduler_mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: scheduler
+      MYSQL_USER: symfony
+      MYSQL_PASSWORD: symfony
+    ports:
+      - "3307:3306"
+    volumes:
+      - type: volume
+        source: mariadb_data
+        target: /var/lib/mysql
+    networks:
+      - scheduler_network
+    command: --default-authentication-plugin=mysql_native_password
+
+  mariadb_test:
+    image: mariadb:10.11
+    container_name: scheduler_mariadb_test
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: scheduler_test
+      MYSQL_USER: symfony
+      MYSQL_PASSWORD: symfony
+    ports:
+      - "3308:3306"
+    networks:
+      - scheduler_network
+    tmpfs:
+      - /var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+
   php:
     build:
       context: ..
@@ -43,6 +77,8 @@ services:
     depends_on:
       - postgres
       - postgres_test
+      - mariadb
+      - mariadb_test
 
   apache:
     image: httpd:2.4-alpine
@@ -80,6 +116,7 @@ services:
       - scheduler_network
     depends_on:
       - postgres
+      - mariadb
     restart: unless-stopped
 
   adminer:
@@ -89,6 +126,7 @@ services:
       - "8280:8080"
     depends_on:
       - postgres
+      - mariadb
     networks:
       - scheduler_network
 
@@ -99,3 +137,4 @@ networks:
 
 volumes:
   postgres_data:
+  mariadb_data:

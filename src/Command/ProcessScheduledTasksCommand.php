@@ -32,20 +32,6 @@ class ProcessScheduledTasksCommand extends Command
     {
         $this
             ->addOption(
-                'worker-id',
-                'w',
-                InputOption::VALUE_REQUIRED,
-                'Worker ID (0-based, e.g., 0, 1, 2, 3, 4)',
-                0
-            )
-            ->addOption(
-                'total-workers',
-                null,
-                InputOption::VALUE_REQUIRED,
-                'Total number of workers for fair distribution',
-                5
-            )
-            ->addOption(
                 'daemon',
                 'd',
                 InputOption::VALUE_NONE,
@@ -57,6 +43,13 @@ class ProcessScheduledTasksCommand extends Command
                 InputOption::VALUE_REQUIRED,
                 'Sleep time in seconds between iterations (daemon mode)',
                 10
+            )
+            ->addOption(
+                'limit',
+                'l',
+                InputOption::VALUE_REQUIRED,
+                'Maximum number of tasks to process per iteration',
+                100
             )
             ->addOption(
                 'max-execution-time',
@@ -71,38 +64,29 @@ class ProcessScheduledTasksCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $workerId = (int) $input->getOption('worker-id');
-        $totalWorkers = (int) $input->getOption('total-workers');
         $isDaemon = $input->getOption('daemon');
         $sleepSeconds = (int) $input->getOption('sleep');
+        $limit = (int) $input->getOption('limit');
         $maxExecutionTime = (int) $input->getOption('max-execution-time');
 
-        if ($workerId < 0 || $workerId >= $totalWorkers) {
-            $io->error("Worker ID must be between 0 and " . ($totalWorkers - 1));
-            return Command::FAILURE;
-        }
-
         $io->info(sprintf(
-            'Starting worker %d/%d [daemon: %s, sleep: %ds]',
-            $workerId,
-            $totalWorkers,
+            'Starting scheduler worker [daemon: %s, sleep: %ds, limit: %d]',
             $isDaemon ? 'yes' : 'no',
-            $sleepSeconds
+            $sleepSeconds,
+            $limit
         ));
 
         $this->logger->info('Scheduler worker started', [
-            'worker_id' => $workerId,
-            'total_workers' => $totalWorkers,
-            'daemon' => $isDaemon
+            'daemon' => $isDaemon,
+            'limit' => $limit,
+            'sleep' => $sleepSeconds
         ]);
 
-        // First, reset any stuck tasks (only worker 0 does this)
-        if ($workerId === 0) {
-            $resetCount = $this->taskRepository->resetStuckTasks();
-            if ($resetCount > 0) {
-                $io->warning("Reset {$resetCount} stuck tasks");
-                $this->logger->warning('Reset stuck tasks', ['count' => $resetCount]);
-            }
+        // Reset any stuck tasks before starting
+        $resetCount = $this->taskRepository->resetStuckTasks();
+        if ($resetCount > 0) {
+            $io->warning("Reset {$resetCount} stuck tasks");
+            $this->logger->warning('Reset stuck tasks', ['count' => $resetCount]);
         }
 
         $totalProcessed = 0;
@@ -113,8 +97,8 @@ class ProcessScheduledTasksCommand extends Command
             $iteration++;
 
             try {
-                // Fair distribution assignment
-                $tasks = $this->taskRepository->assignTasksFairly($workerId, $totalWorkers);
+                // Fetch and lock tasks using FOR UPDATE SKIP LOCKED
+                $tasks = $this->taskRepository->fetchAndLockPendingTasks($limit);
 
                 if (empty($tasks)) {
                     $io->text(sprintf('[Iteration %d] No tasks to process', $iteration));
@@ -128,11 +112,9 @@ class ProcessScheduledTasksCommand extends Command
                 }
 
                 $io->text(sprintf(
-                    '[Iteration %d] Processing %d tasks (Worker %d/%d)',
+                    '[Iteration %d] Processing %d tasks',
                     $iteration,
-                    count($tasks),
-                    $workerId,
-                    $totalWorkers
+                    count($tasks)
                 ));
 
                 $processed = 0;
@@ -171,7 +153,6 @@ class ProcessScheduledTasksCommand extends Command
             } catch (\Exception $e) {
                 $io->error('Error in iteration: ' . $e->getMessage());
                 $this->logger->error('Worker error', [
-                    'worker_id' => $workerId,
                     'error' => $e->getMessage(),
                     'trace' => $e->getTraceAsString()
                 ]);
@@ -188,15 +169,13 @@ class ProcessScheduledTasksCommand extends Command
         $duration = time() - $startTime;
 
         $io->success(sprintf(
-            'Worker %d finished. Total processed: %d tasks in %d seconds (%.2f tasks/sec)',
-            $workerId,
+            'Worker finished. Total processed: %d tasks in %d seconds (%.2f tasks/sec)',
             $totalProcessed,
             $duration,
             $duration > 0 ? $totalProcessed / $duration : 0
         ));
 
         $this->logger->info('Scheduler worker finished', [
-            'worker_id' => $workerId,
             'total_processed' => $totalProcessed,
             'duration_seconds' => $duration
         ]);

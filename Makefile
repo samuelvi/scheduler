@@ -53,6 +53,12 @@ migrate: ## Run migrations
 db-reset: db-drop db-create migrate ## Reset database (drop + create + migrate)
 	@echo "✓ Database reset complete!"
 
+switch-postgres: ## Switch to PostgreSQL
+	./scripts/switch-db.sh postgresql
+
+switch-mariadb: ## Switch to MariaDB
+	./scripts/switch-db.sh mariadb
+
 ## —— Testing ———————————————————————————————————————————————————————————————
 test: ## Run all tests (non-interactive, for CI/CD)
 	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit
@@ -68,6 +74,12 @@ test-functional: ## Run functional tests only
 
 test-coverage: ## Run tests with coverage (requires Xdebug)
 	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --coverage-html coverage/
+
+test-mariadb: ## Run tests with MariaDB
+	$(DOCKER_COMPOSE) exec php vendor/bin/phpunit --configuration phpunit-mariadb.xml.dist
+
+test-all-db: ## Run tests against all databases (PostgreSQL + MariaDB)
+	./scripts/test-all-db.sh
 
 test-interactive: ## Run all test suites with interactive benchmark prompt (developer-friendly)
 	@echo "======================================"
@@ -113,11 +125,11 @@ stats: ## Show scheduler statistics
 cleanup: ## Clean old completed/failed tasks (30 days)
 	$(DOCKER_COMPOSE) exec php bin/console app:scheduler:cleanup
 
-process: ## Process scheduled tasks (single run, worker 0)
-	$(DOCKER_COMPOSE) exec php bin/console app:process-scheduled-tasks --worker-id=0 --total-workers=5
+process: ## Process scheduled tasks (single run)
+	$(DOCKER_COMPOSE) exec php bin/console app:process-scheduled-tasks --limit=100
 
-process-daemon: ## Process tasks in daemon mode (worker 0)
-	$(DOCKER_COMPOSE) exec php bin/console app:process-scheduled-tasks --daemon --worker-id=0 --total-workers=5
+process-daemon: ## Process tasks in daemon mode
+	$(DOCKER_COMPOSE) exec php bin/console app:process-scheduled-tasks --daemon --sleep=10 --limit=100
 
 ## —— Development ———————————————————————————————————————————————————————————
 create-task: ## Create a test task (usage: make create-task case=send_email)
@@ -176,8 +188,8 @@ supervisor-logs: ## Show supervisor logs
 quick-test: up ## Quick test: create tasks and process them
 	@echo "Creating 100 test tasks..."
 	$(DOCKER_COMPOSE) exec php bin/console app:benchmark-scheduler --tasks=100 --clean
-	@echo "\nProcessing tasks with worker 0..."
-	$(DOCKER_COMPOSE) exec php bin/console app:process-scheduled-tasks --worker-id=0 --total-workers=5
+	@echo "\nProcessing tasks..."
+	$(DOCKER_COMPOSE) exec php bin/console app:process-scheduled-tasks --limit=100
 	@echo "\nShowing stats..."
 	$(MAKE) stats
 

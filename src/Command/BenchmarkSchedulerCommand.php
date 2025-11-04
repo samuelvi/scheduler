@@ -63,33 +63,57 @@ class BenchmarkSchedulerCommand extends Command
             $io->success('Database cleaned');
         }
 
-        // PHASE 1: Create tasks
+        // PHASE 1: Create tasks using direct SQL for better performance
         $io->section("Phase 1: Creating {$taskCount} tasks");
         $createStart = microtime(true);
 
         $tasksPerUseCase = (int) floor($taskCount / count(self::USE_CASES));
         $created = 0;
 
+        $connection = $this->entityManager->getConnection();
+        $platform = $connection->getDatabasePlatform()->getName();
+
+        // Use batch inserts for better performance
+        $batchSize = 500;
+        $values = [];
+
         foreach (self::USE_CASES as $useCase => $avgDuration) {
             for ($i = 0; $i < $tasksPerUseCase; $i++) {
-                $task = new ScheduledTask();
-                $task->setUseCase($useCase);
-                $task->setPayload($this->generatePayload($useCase, $i));
-                $task->setScheduledAt(new \DateTime());
+                $payload = json_encode($this->generatePayload($useCase, $i));
+                $now = (new \DateTime())->format('Y-m-d H:i:s');
 
-                $this->entityManager->persist($task);
+                // quote() already includes quotes, so don't add them again
+                $values[] = sprintf(
+                    "(%s, %s, %s, 'pending', 0, 3, %s, %s)",
+                    $connection->quote($useCase),
+                    $connection->quote($payload),
+                    $connection->quote($now),
+                    $connection->quote($now),
+                    $connection->quote($now)
+                );
+
                 $created++;
 
-                // Flush every 100 tasks to avoid memory issues
-                if ($created % 100 === 0) {
-                    $this->entityManager->flush();
-                    $this->entityManager->clear();
+                // Insert in batches
+                if (count($values) >= $batchSize) {
+                    $sql = sprintf(
+                        "INSERT INTO scheduled_tasks (use_case, payload, scheduled_at, status, attempts, max_attempts, created_at, updated_at) VALUES %s",
+                        implode(', ', $values)
+                    );
+                    $connection->executeStatement($sql);
+                    $values = [];
                 }
             }
         }
 
-        $this->entityManager->flush();
-        $this->entityManager->clear();
+        // Insert remaining
+        if (!empty($values)) {
+            $sql = sprintf(
+                "INSERT INTO scheduled_tasks (use_case, payload, scheduled_at, status, attempts, max_attempts, created_at, updated_at) VALUES %s",
+                implode(', ', $values)
+            );
+            $connection->executeStatement($sql);
+        }
 
         $createDuration = microtime(true) - $createStart;
 
@@ -136,18 +160,41 @@ class BenchmarkSchedulerCommand extends Command
             sprintf('With 10 workers (parallel): %.2f seconds', ($totalTheoretical / 1000) / 10),
         ]);
 
-        // PHASE 2: Simulate worker assignment
+        // PHASE 2: Test worker assignment (with limited sample for large datasets)
         $io->section('Phase 2: Worker Assignment Test');
+
+        // For large datasets, test with a sample to avoid memory issues
+        $sampleSize = min($created, 1000);
+
+        if ($created > 1000) {
+            $io->info(sprintf(
+                'Testing with sample of %d tasks (out of %d total)',
+                $sampleSize,
+                $created
+            ));
+        }
+
         $assignStart = microtime(true);
 
         $repo = $this->entityManager->getRepository(ScheduledTask::class);
         $assignedPerWorker = [];
 
+        // Simulate 5 workers processing in batches
+        $batchSize = (int) ceil($sampleSize / 5);
+
         for ($workerId = 0; $workerId < 5; $workerId++) {
-            $tasks = $repo->assignTasksFairly($workerId, 5);
+            // Each worker fetches a batch using FOR UPDATE SKIP LOCKED
+            $tasks = $repo->fetchAndLockPendingTasks($batchSize);
             $assignedPerWorker[$workerId] = count($tasks);
 
-            $io->text(sprintf('Worker %d: assigned %d tasks', $workerId, count($tasks)));
+            $io->text(sprintf('Worker %d: locked %d tasks', $workerId, count($tasks)));
+
+            // Clear the entity manager to free memory
+            $this->entityManager->clear();
+
+            if (count($tasks) === 0) {
+                break; // No more tasks available
+            }
         }
 
         $assignDuration = microtime(true) - $assignStart;
@@ -160,8 +207,8 @@ class BenchmarkSchedulerCommand extends Command
         // Verify distribution
         $io->section('Assignment Distribution Verification');
         $total = array_sum($assignedPerWorker);
-        $avg = $total / 5;
-        $variance = array_sum(array_map(fn($c) => pow($c - $avg, 2), $assignedPerWorker)) / 5;
+        $avg = $total > 0 ? $total / count($assignedPerWorker) : 0;
+        $variance = $total > 0 ? array_sum(array_map(fn($c) => pow($c - $avg, 2), $assignedPerWorker)) / count($assignedPerWorker) : 0;
         $stdDev = sqrt($variance);
 
         $io->table(
@@ -170,7 +217,7 @@ class BenchmarkSchedulerCommand extends Command
                 fn($id, $count) => [
                     "Worker {$id}",
                     $count,
-                    sprintf('%+d', $count - $avg)
+                    $avg > 0 ? sprintf('%+d', $count - $avg) : '0'
                 ],
                 array_keys($assignedPerWorker),
                 $assignedPerWorker
@@ -178,7 +225,7 @@ class BenchmarkSchedulerCommand extends Command
         );
 
         $io->text([
-            sprintf('Total assigned: %d', $total),
+            sprintf('Total locked: %d (sample)', $total),
             sprintf('Average per worker: %.2f', $avg),
             sprintf('Standard deviation: %.2f', $stdDev),
         ]);
@@ -196,21 +243,28 @@ class BenchmarkSchedulerCommand extends Command
         $io->text([
             'Tasks are now ready in the database. To test actual processing:',
             '',
-            'Option A - Sequential (slower, for testing):',
-            '  docker-compose exec php bin/console app:process-scheduled-tasks --worker-id=1 --total-workers=5',
-            '  docker-compose exec php bin/console app:process-scheduled-tasks --worker-id=2 --total-workers=5',
-            '  ... (repeat for workers 3, 4, 5)',
+            'Option A - Using Supervisor (recommended):',
+            '  make supervisor-status    # Check workers are running',
+            '  make supervisor-logs      # Monitor processing in real-time',
+            '  make stats                # View completion stats',
             '',
-            'Option B - Parallel (realistic, use multiple terminals):',
-            '  Terminal 1: docker-compose exec php bin/console app:process-scheduled-tasks --worker-id=1 --total-workers=5',
-            '  Terminal 2: docker-compose exec php bin/console app:process-scheduled-tasks --worker-id=2 --total-workers=5',
-            '  ... (5 terminals total)',
+            'Option B - Single Run (for testing):',
+            '  make process              # Process a batch of tasks',
             '',
-            'The benchmark will measure:',
-            '  - Assignment time (already measured above)',
-            '  - Processing time (measure when running workers)',
-            '  - Throughput (tasks/second)',
-            '  - Distribution fairness',
+            'Option C - Manual Multiple Workers (for testing):',
+            '  Terminal 1: docker-compose exec php bin/console app:process-scheduled-tasks --limit=200',
+            '  Terminal 2: docker-compose exec php bin/console app:process-scheduled-tasks --limit=200',
+            '  Terminal 3: docker-compose exec php bin/console app:process-scheduled-tasks --limit=200',
+            '  ... (multiple terminals, workers use FOR UPDATE SKIP LOCKED for safe concurrency)',
+            '',
+            'The workers use FOR UPDATE SKIP LOCKED to automatically coordinate',
+            'and avoid processing the same task twice.',
+            '',
+            'Performance metrics:',
+            '  - Assignment time: already measured above',
+            '  - Processing time: measure with supervisor or manual runs',
+            '  - Throughput: tasks/second',
+            '  - Concurrency: no duplicate processing thanks to row-level locking',
         ]);
 
         // Summary

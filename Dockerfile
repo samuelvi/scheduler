@@ -15,6 +15,7 @@ RUN apk add --no-cache \
 RUN docker-php-ext-install \
     pdo \
     pdo_pgsql \
+    pdo_mysql \
     intl \
     zip \
     opcache
